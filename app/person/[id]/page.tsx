@@ -1,0 +1,225 @@
+import { JsonLdScript } from "@/components/seo/json-ld-script";
+import { buildPersonStructuredData } from "@/lib/seo/structured-data";
+import {
+  buildNotFoundMetadata,
+  buildPageMetadata,
+  truncateDescription,
+} from "@/lib/seo/metadata";
+import {
+  buildItemsWithCategories,
+  fetchPersonFilmography,
+  getPersonDetails,
+} from "@/lib/server/actions";
+import { cn, isDeceasedAsOfToday } from "@/lib/utils";
+import { ContentContainer } from "@/components/layout/content-container";
+import { PageContainer } from "@/components/layout/page-container";
+import { StableBackground } from "@/components/layout/stable-background";
+import { BiographyReadMore } from "@/components/person/person-client";
+import { MediaItem } from "@/lib/domain/typings";
+import { Calendar, MapPin, User } from "lucide-react";
+import { Metadata } from "next";
+import Image from "next/image";
+import { notFound } from "next/navigation";
+import { PersonFilmography } from "./client-filmography";
+
+export const revalidate = 3600;
+
+interface PersonPageProps {
+  params: Promise<{
+    id: string;
+  }>;
+}
+
+export async function generateMetadata(
+  props: PersonPageProps,
+): Promise<Metadata> {
+  const params = await props.params;
+  const personId = Number.parseInt(params.id, 10);
+
+  if (Number.isNaN(personId)) {
+    return buildNotFoundMetadata("Person Not Found");
+  }
+
+  try {
+    const person = await getPersonDetails(personId);
+
+    if (!person) {
+      return buildNotFoundMetadata("Person Not Found");
+    }
+
+    const description = person.biography
+      ? truncateDescription(person.biography)
+      : `Explore movies and TV shows featuring ${person.name} on NyumatFlix.`;
+
+    return buildPageMetadata({
+      title: `${person.name} - Filmography`,
+      description,
+      path: `/person/${personId}`,
+      ogType: "profile",
+      imageAlt: `${person.name} on NyumatFlix`,
+      includeDefaultImage: false,
+    });
+  } catch {
+    return buildNotFoundMetadata("Person Not Found");
+  }
+}
+
+export default async function PersonPage(props: PersonPageProps) {
+  const params = await props.params;
+  const personId = Number.parseInt(params.id, 10);
+
+  if (Number.isNaN(personId)) {
+    notFound();
+  }
+
+  const person = await getPersonDetails(personId);
+
+  if (!person) {
+    notFound();
+  }
+
+  const { deathday } = person;
+
+  const initialFilmographyResponse = await fetchPersonFilmography(personId, 1);
+  let initialFilmography: MediaItem[] = [];
+
+  if (initialFilmographyResponse?.results) {
+    const validResults = initialFilmographyResponse.results.filter(
+      (
+        item,
+      ): item is {
+        id: number;
+        genre_ids?: number[];
+        poster_path?: string | null;
+      } =>
+        typeof item === "object" &&
+        item !== null &&
+        "id" in item &&
+        typeof (item as { id: unknown }).id === "number" &&
+        Boolean((item as { poster_path?: string | null }).poster_path),
+    );
+
+    if (validResults.length > 0) {
+      initialFilmography = await buildItemsWithCategories(
+        validResults,
+        "multi",
+      );
+    }
+  }
+
+  return (
+    <PageContainer className="pb-4 mb-4">
+      <JsonLdScript data={buildPersonStructuredData(person, personId)} />
+      <div className="relative min-h-screen">
+        <StableBackground />
+        <div className="relative z-10">
+          <ContentContainer
+            className="mx-auto px-4 mt-6 relative z-10 max-w-7xl"
+            topSpacing={false}
+          >
+            <div
+              id="section-bio"
+              className="scroll-mt-24 grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8"
+            >
+              <div className="lg:col-span-1 flex justify-center lg:justify-start">
+                <div className="rounded-lg overflow-hidden shadow-xl mt-4 mb-4 w-[280px] sm:w-[320px] lg:w-full">
+                  {person.profile_path ? (
+                    <Image
+                      src={`https://image.tmdb.org/t/p/w500${person.profile_path}`}
+                      alt={person.name || "Person"}
+                      width={500}
+                      height={750}
+                      priority
+                      className={cn(
+                        "h-auto w-full",
+                        isDeceasedAsOfToday(deathday) && "grayscale",
+                      )}
+                    />
+                  ) : (
+                    <div className="w-full aspect-2/3 flex items-center justify-center bg-muted">
+                      <User size={120} className="text-muted-foreground" />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="lg:col-span-2">
+                <div className="bg-black/60 backdrop-blur-md border border-white/20 rounded-lg p-6 space-y-6 shadow-xl">
+                  <h1 className="text-3xl md:text-4xl font-bold text-white">
+                    {person.name}
+                  </h1>
+
+                  <div className="space-y-3">
+                    {person.birthday && (
+                      <div className="flex items-center space-x-3">
+                        <Calendar size={18} className="text-gray-400" />
+                        <span className="text-white">
+                          Born:{" "}
+                          {new Date(person.birthday).toLocaleDateString(
+                            "en-US",
+                            { timeZone: "UTC" },
+                          )}
+                        </span>
+                      </div>
+                    )}
+
+                    {deathday && deathday.trim() !== "" && (
+                      <div className="flex items-center space-x-3">
+                        <Calendar size={18} className="text-gray-400" />
+                        <span className="text-white">
+                          Died:{" "}
+                          {new Date(deathday).toLocaleDateString("en-US", {
+                            timeZone: "UTC",
+                          })}
+                        </span>
+                      </div>
+                    )}
+
+                    {person.place_of_birth && (
+                      <div className="flex items-center space-x-3">
+                        <MapPin size={18} className="text-gray-400" />
+                        <span className="text-white">
+                          {person.place_of_birth}
+                        </span>
+                      </div>
+                    )}
+
+                    {person.known_for_department && (
+                      <div className="flex items-center space-x-3">
+                        <User size={18} className="text-gray-400" />
+                        <span className="text-white">
+                          Known for: {person.known_for_department}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {person.biography && (
+                    <BiographyReadMore biography={person.biography} />
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div
+              id="section-filmography"
+              className="scroll-mt-24 bg-black/60 backdrop-blur-md border border-white/20 rounded-lg p-6 shadow-xl"
+            >
+              <div className="space-y-4 mb-6">
+                <h2 className="text-2xl font-bold text-white">Filmography</h2>
+                <p className="text-gray-300">
+                  All movies and TV shows featuring {person.name}.
+                </p>
+              </div>
+
+              <PersonFilmography
+                personId={personId}
+                initialFilmography={initialFilmography}
+              />
+            </div>
+          </ContentContainer>
+        </div>
+      </div>
+    </PageContainer>
+  );
+}

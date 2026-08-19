@@ -1,0 +1,31 @@
+#!/bin/sh
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# Try to find bun in common locations if not in PATH
+if ! command -v bun >/dev/null 2>&1; then
+  if [ -f "$HOME/.bun/bin/bun" ]; then
+    export PATH="$HOME/.bun/bin:$PATH"
+  elif [ -f "/opt/homebrew/bin/bun" ]; then
+    export PATH="/opt/homebrew/bin:$PATH"
+  elif [ -f "$HOME/.local/bin/bun" ]; then
+    export PATH="$HOME/.local/bin:$PATH"
+  fi
+fi
+
+# Try to find node in common locations if not in PATH (for check-emoji when bun is absent)
+if ! command -v node >/dev/null 2>&1; then
+  if [ -f "/opt/homebrew/bin/node" ]; then
+    export PATH="/opt/homebrew/bin:$PATH"
+  elif [ -f "/usr/local/bin/node" ]; then
+    export PATH="/usr/local/bin:$PATH"
+  fi
+fi
+
+# Always run the checker when possible so we skip emojify if the subject already has an emoji.
+# Previously, the no-bun path skipped the checker and always ran emojify (duplicate emojis).
+if command -v bun >/dev/null 2>&1; then
+  bun "$SCRIPT_DIR/check-emoji.js" "$1" || bunx --bun @humankode/git-commit-emojify@latest "$1"
+elif command -v node >/dev/null 2>&1; then
+  node "$SCRIPT_DIR/check-emoji.js" "$1" || npx --yes @humankode/git-commit-emojify@latest "$1"
+else
+  npx --yes @humankode/git-commit-emojify@latest "$1"
+fi

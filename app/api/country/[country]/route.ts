@@ -1,0 +1,104 @@
+import {
+  buildItemsWithCategories,
+  fetchAndEnrichMediaItems,
+  fetchTMDBData,
+} from "@/lib/server/actions";
+import { mapMediaListToCanonicalCardsValue } from "@/lib/cards/mappers";
+import {
+  filterReleasedMovies,
+  filterReleasedTvShows,
+  getTodayIsoDateUtc,
+} from "@/lib/released-media";
+import { catalogCacheHeaders } from "@/lib/http-cache";
+import { MediaItem } from "@/lib/domain/typings";
+import { NextRequest, NextResponse } from "next/server";
+
+export async function GET(
+  req: NextRequest,
+  props: { params: Promise<{ country: string }> },
+) {
+  const params = await props.params;
+  try {
+    const { searchParams } = new URL(req.url);
+    const page = parseInt(searchParams.get("page") || "1", 10);
+    const mediaType = searchParams.get("type") || "movie";
+    const sortBy = searchParams.get("sortBy") || "popularity.desc";
+
+    if (mediaType !== "movie" && mediaType !== "tv") {
+      return NextResponse.json(
+        { error: "Invalid media type. Must be 'movie' or 'tv'" },
+        { status: 400 },
+      );
+    }
+
+    const countryCode = params.country;
+
+    const queryParams: Record<string, string> = {
+      language: "en-US",
+      include_adult: "false",
+      sort_by: sortBy,
+    };
+
+    const today = getTodayIsoDateUtc();
+
+    if (mediaType === "movie") {
+      queryParams.region = countryCode;
+      queryParams["primary_release_date.lte"] = today;
+      if (countryCode === "US") {
+        queryParams.with_origin_country = "US";
+      }
+    } else {
+      queryParams.with_origin_country = countryCode;
+      queryParams["first_air_date.lte"] = today;
+    }
+
+    queryParams["vote_count.gte"] = "10"; // Minimum vote count
+    if (sortBy.startsWith("vote_average.")) {
+      queryParams["vote_average.gte"] = "6.0"; // Minimum rating for rating sorts
+    }
+
+    const data = await fetchTMDBData<MediaItem>(
+      `/discover/${mediaType}`,
+      queryParams,
+      page,
+    );
+
+    const resultsWithPoster = (data.results || []).filter((item: MediaItem) =>
+      Boolean(item.poster_path),
+    );
+
+    const processedResults = await buildItemsWithCategories<MediaItem>(
+      resultsWithPoster as MediaItem[],
+      mediaType as "movie" | "tv",
+    );
+
+    const enrichedResults = await fetchAndEnrichMediaItems(
+      processedResults,
+      mediaType as "movie" | "tv",
+    );
+
+    const releasedOnly =
+      mediaType === "movie"
+        ? filterReleasedMovies(enrichedResults)
+        : filterReleasedTvShows(enrichedResults);
+
+    return NextResponse.json(
+      {
+        page: data.page,
+        total_pages: data.total_pages,
+        total_results: data.total_results,
+        results: mapMediaListToCanonicalCardsValue(releasedOnly, mediaType),
+        type: mediaType,
+        countryCode,
+        sortBy,
+      },
+      { headers: catalogCacheHeaders() },
+    );
+  } catch (error) {
+    console.error("[api/country] Error fetching country content", error);
+    return NextResponse.json(
+      { error: "Failed to fetch country content" },
+      { status: 500 },
+    );
+  }
+}

@@ -1,0 +1,42 @@
+@import "@vidstack/react/player/styles/base.css";
+@import "@vidstack/react/player/styles/default/theme.css";
+@import "@vidstack/react/player/styles/default/layouts/video.css";
+
+.nyumat-scrape-player {
+  --video-brand: hsl(var(--primary));
+  --video-focus-ring-color: hsl(var(--primary) / 0.45);
+  --video-bg: #000000;
+  --video-border-radius: 0px;
+  --video-border: 0px solid transparent;
+  --media-font-family:
+    var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+}
+
+.nyumat-scrape-player[data-media-player] {
+  width: 100%;
+  height: 100%;
+  display: block;
+  aspect-ratio: unset;
+  background: #000000;
+}
+
+.nyumat-scrape-player [data-media-provider] video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* Tint IntroDB ranges while leaving Vidstack's progress fill and seeking intact. */
+.nyumat-scrape-player media-time-slider [part="chapters"]::after {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  right: 0;
+  left: 0;
+  height: var(--track-height);
+  border-radius: var(--media-slider-track-border-radius, 1px);
+  background-image: var(--nyumat-introdb-chapter-gradient, none);
+  content: "";
+  pointer-events: none;
+  transform: translateY(-50%) translateZ(0);
+}
