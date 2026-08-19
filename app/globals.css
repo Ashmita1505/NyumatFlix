@@ -516,3 +516,9 @@ html {
     display: none;
   }
 }
+
+/* Add this right here at the bottom */
+img {
+  max-width: 100% !important;
+  height: auto !important;
+}
